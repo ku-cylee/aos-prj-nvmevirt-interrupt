@@ -134,6 +134,7 @@ struct pci_pm_cap {
 	u8 ext[2];
 };
 
+// TODO: add pci_msi_cap
 struct pci_msi_cap {
 	struct {
 	} mid;
@@ -549,7 +550,9 @@ struct nvme_ctrl_regs {
 #define SZ_PCI_PM_CAP sizeof(struct pci_pm_cap) // 0x40
 #define SZ_PCI_MSIX_CAP sizeof(struct pci_msix_cap) // 0x50
 #define SZ_PCIE_CAP sizeof(struct pcie_cap) // 0x60
+// TODO: Add SZ_PCI_MSI_CAP
 
+// TODO: Add OFFS_PCI_MSI_CAP
 #define OFFS_PCI_HDR 0x0
 #define OFFS_PCI_PM_CAP 0x40
 #define OFFS_PCI_MSIX_CAP 0x50

@@ -625,6 +625,9 @@ static int NVMeV_init(void)
 		}
 	}
 
+	// 여기서 pci_pm_cap, pci_msix_cap을 setting
+	// 연결: pci_header -> pci_pm_cap -> pci_msix_cap -> pcie_cap -> 0x0
+	// TODO: msi_cap setting을 여기서 바꿔주면 될 듯?
 	if (!NVMEV_PCI_INIT(nvmev_vdev)) {
 		goto ret_err;
 	}

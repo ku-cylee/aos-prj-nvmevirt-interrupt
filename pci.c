@@ -542,6 +542,7 @@ static void PCI_MSIXCAP_SETTINGS(struct pci_msix_cap *msixcap)
 static void PCI_PCIECAP_SETTINGS(struct pcie_cap *pciecap)
 {
 	pciecap->pxid.cid = PCI_CAP_ID_EXP;
+	// TODO: 이 부분을 msi_cap과 연결해주면 될듯
 	pciecap->pxid.next = 0x0;
 
 	pciecap->pxcap.ver = PCI_EXP_FLAGS;
