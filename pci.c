@@ -305,8 +305,10 @@ static int nvmev_pci_write(struct pci_bus *bus, unsigned int devfn, int where, i
 		} else {
 			mask = 0x0;
 		}
-	} else if (where < OFFS_PCI_MSIX_CAP) {
+	} else if (where < OFFS_PCI_MSI_CAP) { // AOS: Add msi_cap
 		// PCI_PM_CAP
+	} else if (where < OFFS_PCI_MSIX_CAP) {
+		// PCI_MSI_CAP
 	} else if (where < OFFS_PCIE_CAP) {
 		// PCI_MSIX_CAP
 		target -= OFFS_PCI_MSIX_CAP;
@@ -438,6 +440,8 @@ struct nvmev_dev *VDEV_INIT(void)
 
 	nvmev_vdev->pcihdr = nvmev_vdev->virtDev + OFFS_PCI_HDR;
 	nvmev_vdev->pmcap = nvmev_vdev->virtDev + OFFS_PCI_PM_CAP;
+	// AOS: Add msi_cap
+	nvmev_vdev->msicap = nvmev_vdev->virtDev + OFFS_PCI_MSI_CAP;
 	nvmev_vdev->msixcap = nvmev_vdev->virtDev + OFFS_PCI_MSIX_CAP;
 	nvmev_vdev->pciecap = nvmev_vdev->virtDev + OFFS_PCIE_CAP;
 	nvmev_vdev->extcap = nvmev_vdev->virtDev + OFFS_PCI_EXT_CAP;
@@ -517,11 +521,21 @@ static void PCI_HEADER_SETTINGS(struct pci_header *pcihdr, unsigned long base_pa
 static void PCI_PMCAP_SETTINGS(struct pci_pm_cap *pmcap)
 {
 	pmcap->pid.cid = PCI_CAP_ID_PM;
-	pmcap->pid.next = OFFS_PCI_MSIX_CAP;
+	pmcap->pid.next = OFFS_PCI_MSI_CAP;
 
 	pmcap->pc.vs = 3;
 	pmcap->pmcs.nsfrst = 1;
 	pmcap->pmcs.ps = PCI_PM_CAP_PME_D0 >> 16;
+}
+
+// AOS: Add msi_cap settings
+static void PCI_MSICAP_SETTINGS(struct pci_msi_cap *msicap)
+{
+	msicap->mid.cid = PCI_CAP_ID_MSI;
+	msicap->mid.next = OFFS_PCI_MSIX_CAP;
+
+	msicap->mc.c64 = 1;
+	msicap->mc.pvm = 0; // Maskability (Can be set to 0)
 }
 
 static void PCI_MSIXCAP_SETTINGS(struct pci_msix_cap *msixcap)
@@ -617,6 +631,8 @@ bool NVMEV_PCI_INIT(struct nvmev_dev *nvmev_vdev)
 {
 	PCI_HEADER_SETTINGS(nvmev_vdev->pcihdr, nvmev_vdev->config.memmap_start);
 	PCI_PMCAP_SETTINGS(nvmev_vdev->pmcap);
+	// AOS: Add msi_cap
+	PCI_MSICAP_SETTINGS(nvmev_vdev->msicap);
 	PCI_MSIXCAP_SETTINGS(nvmev_vdev->msixcap);
 	PCI_PCIECAP_SETTINGS(nvmev_vdev->pciecap);
 	PCI_EXTCAP_SETTINGS(nvmev_vdev->extcap);

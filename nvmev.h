@@ -216,6 +216,8 @@ struct nvmev_dev {
 	void *virtDev;
 	struct pci_header *pcihdr;
 	struct pci_pm_cap *pmcap;
+	// AOS: Add pci_msi_cap
+	struct pci_msi_cap *msicap;
 	struct pci_msix_cap *msixcap;
 	struct pcie_cap *pciecap;
 	struct pci_ext_cap *extcap;

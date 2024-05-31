@@ -134,21 +134,35 @@ struct pci_pm_cap {
 	u8 ext[2];
 };
 
-// TODO: add pci_msi_cap
+// AOS: add pci_msi_cap
 struct pci_msi_cap {
 	struct {
+		u8 cid;
+		u8 next;
 	} mid;
 	struct {
+		u16 msie : 1;
+		u16 mmc : 3;
+		u16 mme : 3;
+		u16 c64 : 1;
+		u16 pvm : 1;
+		u16 rsvd : 7;
 	} mc;
 	struct {
+		u32 rsvd : 2;
+		u32 addr : 30;
 	} ma;
 	struct {
+		u32 uaddr;
 	} mua;
 	struct {
+		u16 data;
 	} md;
 	struct {
+		u32 mask;
 	} mmask;
 	struct {
+		u32 pend;
 	} mpend;
 };
 
@@ -545,18 +559,20 @@ struct nvme_ctrl_regs {
 #define NVMEV_PCI_DOMAIN_NUM 0x0001
 #define NVMEV_PCI_BUS_NUM 0x10
 
-//[PCI_HEADER][PM_CAP][MSIX_CAP][PCIE_CAP] | [AER_CAP][EXT_CAP]
+//[PCI_HEADER][PM_CAP][MSI_CAP][MSIX_CAP][PCIE_CAP] | [AER_CAP][EXT_CAP]
 #define SZ_PCI_HDR sizeof(struct pci_header) // 0
 #define SZ_PCI_PM_CAP sizeof(struct pci_pm_cap) // 0x40
-#define SZ_PCI_MSIX_CAP sizeof(struct pci_msix_cap) // 0x50
-#define SZ_PCIE_CAP sizeof(struct pcie_cap) // 0x60
-// TODO: Add SZ_PCI_MSI_CAP
+// AOS: Add SZ_PCI_MSI_CAP
+#define SZ_PCI_MSI_CAP sizeof(struct pci_msi_cap) // 0x50
+#define SZ_PCI_MSIX_CAP sizeof(struct pci_msix_cap) // 0x60
+#define SZ_PCIE_CAP sizeof(struct pcie_cap) // 0x70
 
-// TODO: Add OFFS_PCI_MSI_CAP
 #define OFFS_PCI_HDR 0x0
 #define OFFS_PCI_PM_CAP 0x40
-#define OFFS_PCI_MSIX_CAP 0x50
-#define OFFS_PCIE_CAP 0x60
+// AOS: Add OFFS_PCI_MSI_CAP (Changed offsets of others)
+#define OFFS_PCI_MSI_CAP 0x50
+#define OFFS_PCI_MSIX_CAP 0x70
+#define OFFS_PCIE_CAP 0x80
 
 #define SZ_HEADER (OFFS_PCIE_CAP + SZ_PCIE_CAP)
 
