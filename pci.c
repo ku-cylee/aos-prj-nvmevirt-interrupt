@@ -3,12 +3,20 @@
 #include <linux/pci.h>
 #include <linux/irq.h>
 #include <linux/version.h>
+#include <linux/io.h>
 
 #include <linux/percpu-defs.h>
 #include <linux/sched/clock.h>
 
 #include "nvmev.h"
 #include "pci.h"
+
+struct msix_table_entry {
+	u32 msg_addr_lo;
+	u32 msg_addr_hi;
+	u32 msg_data;
+	u32 vector_ctrl;
+};
 
 #ifdef CONFIG_NVMEV_FAST_X86_IRQ_HANDLING
 static int apicid_to_cpuid[256];
@@ -39,6 +47,7 @@ static void __signal_irq(const char *type, unsigned int irq)
 {
 	struct irq_data *data = irq_get_irq_data(irq);
 	struct irq_chip *chip = irq_data_get_irq_chip(data);
+	// NVMEV_INFO("Signal irq: %u mask %u, irq %u, hwirq %lx ", irq, data->mask, data->irq, data->hwirq);
 
 	NVMEV_DEBUG_VERBOSE("irq: %s %d, vector %d\n", type, irq, irqd_cfg(data)->vector);
 	BUG_ON(!chip->irq_retrigger);
@@ -48,9 +57,29 @@ static void __signal_irq(const char *type, unsigned int irq)
 }
 #endif
 
+static bool is_msix_masked(int msi_index) {
+	void __iomem *msix_table = nvmev_vdev->msix_table;
+
+	size_t entry_size = sizeof(struct msix_table_entry);
+	void __iomem *entry_ptr = msix_table + msi_index * entry_size;
+
+	u32 msi_addr_lo = ioread32(entry_ptr + offsetof(struct msix_table_entry, msg_addr_lo));
+	u32 msi_addr_hi = ioread32(entry_ptr + offsetof(struct msix_table_entry, msg_addr_hi));
+	u64 msi_addr = (u64)msi_addr_hi << 32 | msi_addr_lo;
+
+	u32 msi_data = ioread32(entry_ptr + offsetof(struct msix_table_entry, msg_data));
+	u32 vector_ctrl = ioread32(entry_ptr + offsetof(struct msix_table_entry, vector_ctrl));
+	
+	if (vector_ctrl != 0)
+		NVMEV_INFO("%llx %u %u\n", msi_addr, msi_data, vector_ctrl);
+	return true;
+}
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
 static void __process_msi_irq(int msi_index)
 {
+	is_msix_masked(msi_index);
+
 	unsigned int virq = msi_get_virq(&nvmev_vdev->pdev->dev, msi_index);
 
 	BUG_ON(virq == 0);
@@ -76,6 +105,10 @@ void nvmev_signal_irq(int msi_index)
 {
 	if (nvmev_vdev->pdev->msix_enabled) {
 		__process_msi_irq(msi_index);
+		// NVMEV_INFO("%d\n", msi_index);
+	} else if (nvmev_vdev->pdev->msi_enabled) {
+		__process_msi_irq(msi_index);
+		// NVMEV_INFO("%d\n", msi_index);
 	} else {
 		nvmev_vdev->pcihdr->sts.is = 1;
 
@@ -309,6 +342,22 @@ static int nvmev_pci_write(struct pci_bus *bus, unsigned int devfn, int where, i
 		// PCI_PM_CAP
 	} else if (where < OFFS_PCI_MSIX_CAP) {
 		// PCI_MSI_CAP
+		target -= OFFS_PCI_MSI_CAP;
+		if (target == PCI_MSI_FLAGS) {
+			mask = PCI_MSI_FLAGS_ENABLE | PCI_MSI_FLAGS_QSIZE | PCI_MSI_FLAGS_QMASK;
+			if ((nvmev_vdev->pdev) && ((val ^ _val) & PCI_MSI_FLAGS_ENABLE)) {
+				nvmev_vdev->pdev->msi_enabled = !!(_val & PCI_MSI_FLAGS_ENABLE);
+			}
+		} else if (target == PCI_MSI_ADDRESS_LO) {
+			mask = ~(0U);
+		} else if (target == PCI_MSI_ADDRESS_HI) {
+			mask = ~(0U);
+		} else if (target == PCI_MSI_DATA_64) { // C64 enabled in default configuration
+			mask = ~(0U);
+		} else {
+			mask = 0x0;
+		}
+		// AOS: Adding Multi MSI and Masking?
 	} else if (where < OFFS_PCIE_CAP) {
 		// PCI_MSIX_CAP
 		target -= OFFS_PCI_MSIX_CAP;
@@ -532,10 +581,13 @@ static void PCI_PMCAP_SETTINGS(struct pci_pm_cap *pmcap)
 static void PCI_MSICAP_SETTINGS(struct pci_msi_cap *msicap)
 {
 	msicap->mid.cid = PCI_CAP_ID_MSI;
-	msicap->mid.next = OFFS_PCI_MSIX_CAP;
+	msicap->mid.next = OFFS_PCIE_CAP;
+	// msicap->mid.next = OFFS_PCI_MSIX_CAP;
 
+	msicap->mc.mme = 0b0;
+	msicap->mc.mmc = 0b0;
 	msicap->mc.c64 = 1;
-	msicap->mc.pvm = 0; // Maskability (Can be set to 0)
+	msicap->mc.pvm = 1; // Maskability
 }
 
 static void PCI_MSIXCAP_SETTINGS(struct pci_msix_cap *msixcap)
@@ -556,7 +608,6 @@ static void PCI_MSIXCAP_SETTINGS(struct pci_msix_cap *msixcap)
 static void PCI_PCIECAP_SETTINGS(struct pcie_cap *pciecap)
 {
 	pciecap->pxid.cid = PCI_CAP_ID_EXP;
-	// TODO: 이 부분을 msi_cap과 연결해주면 될듯
 	pciecap->pxid.next = 0x0;
 
 	pciecap->pxcap.ver = PCI_EXP_FLAGS;
