@@ -76,9 +76,44 @@ static bool is_msix_masked(int msi_index) {
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
-static void __process_msi_irq(int msi_index)
+static void __process_msix_irq(int msi_index)
 {
 	is_msix_masked(msi_index);
+
+	unsigned int virq = msi_get_virq(&nvmev_vdev->pdev->dev, msi_index);
+
+	BUG_ON(virq == 0);
+	__signal_irq("msi", virq);
+}
+#else
+static void __process_msix_irq(int msi_index)
+{
+	struct msi_desc *msi_desc, *tmp;
+
+	for_each_msi_entry_safe(msi_desc, tmp, (&nvmev_vdev->pdev->dev)) {
+		if (msi_desc->msi_attrib.entry_nr == msi_index) {
+			__signal_irq("msi", msi_desc->irq);
+			return;
+		}
+	}
+	NVMEV_INFO("Failed to send IPI\n");
+	BUG_ON(!msi_desc);
+}
+#endif
+
+static bool is_msi_masked(int msi_index) {
+	u32 mask = nvmev_vdev->msicap->mmask.mask;
+
+	if (mask & (1 << msi_index))
+		NVMEV_INFO("Hello");
+	
+	return true;
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+static void __process_msi_irq(int msi_index)
+{
+	is_msi_masked(msi_index);
 
 	unsigned int virq = msi_get_virq(&nvmev_vdev->pdev->dev, msi_index);
 
@@ -104,14 +139,17 @@ static void __process_msi_irq(int msi_index)
 void nvmev_signal_irq(int msi_index)
 {
 	if (nvmev_vdev->pdev->msix_enabled) {
-		__process_msi_irq(msi_index);
+		__process_msix_irq(msi_index);
 		// NVMEV_INFO("%d\n", msi_index);
 	} else if (nvmev_vdev->pdev->msi_enabled) {
 		__process_msi_irq(msi_index);
 		// NVMEV_INFO("%d\n", msi_index);
+	} else if (nvmev_vdev->intx_disabled) {
+		NVMEV_INFO("Polling");
+		return;
 	} else {
+		NVMEV_INFO("Signaling Interrupts");
 		nvmev_vdev->pcihdr->sts.is = 1;
-
 		__signal_irq("int", nvmev_vdev->pdev->irq);
 	}
 }
@@ -326,6 +364,7 @@ static int nvmev_pci_write(struct pci_bus *bus, unsigned int devfn, int where, i
 				if (!nvmev_vdev->intx_disabled) {
 					nvmev_vdev->pcihdr->sts.is = 0;
 				}
+				NVMEV_INFO("Polling! %d", nvmev_vdev->intx_disabled);
 			}
 		} else if (target == PCI_STATUS) {
 			mask = 0xF200;
@@ -353,6 +392,13 @@ static int nvmev_pci_write(struct pci_bus *bus, unsigned int devfn, int where, i
 		} else if (target == PCI_MSI_ADDRESS_HI) {
 			mask = ~(0U);
 		} else if (target == PCI_MSI_DATA_64) { // C64 enabled in default configuration
+			mask = ~(0U);
+		} else if (target == PCI_MSI_MASK_64) {
+			NVMEV_INFO("Masked");
+			NVMEV_INFO("new: 0x%x\n", (val & (~mask)) | (_val & mask));
+			mask = ~(0U);
+		} else if (target == PCI_MSI_PENDING_64) {
+			NVMEV_INFO("Pend Set");
 			mask = ~(0U);
 		} else {
 			mask = 0x0;

@@ -485,6 +485,8 @@ static void __nvmev_admin_set_features(int eid)
 		break;
 	}
 	case NVME_FEAT_IRQ_COALESCE:
+		// Set feature, DWORD11
+		break;
 	case NVME_FEAT_IRQ_CONFIG:
 	case NVME_FEAT_WRITE_ATOMIC:
 	case NVME_FEAT_ASYNC_EVENT:
@@ -519,6 +521,8 @@ static void __nvmev_admin_get_features(int eid)
 		result0 = ((nvmev_vdev->nr_cq - 1) << 16 | (nvmev_vdev->nr_sq - 1));
 		break;
 	case NVME_FEAT_IRQ_COALESCE:
+		// Set feature, DWORD11
+		break;
 	case NVME_FEAT_IRQ_CONFIG:
 	case NVME_FEAT_WRITE_ATOMIC:
 	case NVME_FEAT_ASYNC_EVENT:
