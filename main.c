@@ -675,6 +675,7 @@ static void NVMeV_exit(void)
 		kfree(nvmev_vdev->cqes[i]);
 	}
 
+	end_coalesce_timer();
 	VDEV_FINALIZE(nvmev_vdev);
 
 	NVMEV_INFO("Virtual NVMe device closed\n");

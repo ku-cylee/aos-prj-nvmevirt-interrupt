@@ -11,12 +11,59 @@
 #include "nvmev.h"
 #include "pci.h"
 
+#define MSIX_TABLE_SIZE 128
+
 struct msix_table_entry {
 	u32 msg_addr_lo;
 	u32 msg_addr_hi;
 	u32 msg_data;
 	u32 vector_ctrl;
 };
+
+static unsigned int event_count[MSIX_TABLE_SIZE] = { 0 };
+static struct timer_list coalesce_timer;
+
+static void coalesce_timer_callback(struct timer_list *t);
+static void start_coalesce_timer(void);
+void init_coalesce_timer(void);
+
+void end_coalesce_timer(void) {
+	del_timer_sync(&coalesce_timer);
+}
+
+static void __process_msi_irq(int msi_index);
+static void __process_msix_irq(int msi_index);
+static void __signal_irq(const char *type, unsigned int irq);
+
+void init_coalesce_timer(void) {
+	timer_setup(&coalesce_timer, coalesce_timer_callback, 0);
+
+	start_coalesce_timer();
+}
+
+void start_coalesce_timer(void) {
+	mod_timer(&coalesce_timer, jiffies + usecs_to_jiffies(100 * (nvmev_vdev->intr_time + 1)));
+}
+
+static void coalesce_timer_callback(struct timer_list *t) {
+	int i;
+	unsigned long current_time = jiffies;
+	for (i = 0; i < MSIX_TABLE_SIZE; i++) {
+		if (event_count[i] > 0) {
+			if (nvmev_vdev->pdev->msix_enabled) {
+				__process_msix_irq(i);
+			} else if (nvmev_vdev->pdev->msi_enabled) {
+				__process_msi_irq(i);
+			} else {
+				nvmev_vdev->pcihdr->sts.is = 1;
+				__signal_irq("int", nvmev_vdev->pdev->irq);
+			}
+			event_count[i] = 0;
+		}
+	}
+
+	start_coalesce_timer();
+}
 
 #ifdef CONFIG_NVMEV_FAST_X86_IRQ_HANDLING
 static int apicid_to_cpuid[256];
@@ -136,19 +183,27 @@ static void __process_msi_irq(int msi_index)
 }
 #endif
 
-void nvmev_signal_irq(int msi_index)
+void nvmev_signal_irq(int msi_index, bool is_admin)
 {
+	// Adming Interrupt should not be coalesced
+	if (!is_admin) {
+		event_count[msi_index]++;
+		
+		if (event_count[msi_index] >= nvmev_vdev->intr_thr) {
+			event_count[msi_index] = 0;
+		}
+		else {
+			return;
+		}
+	}
+
 	if (nvmev_vdev->pdev->msix_enabled) {
 		__process_msix_irq(msi_index);
 		// NVMEV_INFO("%d\n", msi_index);
 	} else if (nvmev_vdev->pdev->msi_enabled) {
 		__process_msi_irq(msi_index);
 		// NVMEV_INFO("%d\n", msi_index);
-	} else if (nvmev_vdev->intx_disabled) {
-		NVMEV_INFO("Polling");
-		return;
 	} else {
-		NVMEV_INFO("Signaling Interrupts");
 		nvmev_vdev->pcihdr->sts.is = 1;
 		__signal_irq("int", nvmev_vdev->pdev->irq);
 	}
@@ -542,6 +597,8 @@ struct nvmev_dev *VDEV_INIT(void)
 	nvmev_vdev->extcap = nvmev_vdev->virtDev + OFFS_PCI_EXT_CAP;
 
 	nvmev_vdev->admin_q = NULL;
+	nvmev_vdev->intr_thr =0;
+	nvmev_vdev->intr_time = 0;
 
 	return nvmev_vdev;
 }
@@ -616,7 +673,7 @@ static void PCI_HEADER_SETTINGS(struct pci_header *pcihdr, unsigned long base_pa
 static void PCI_PMCAP_SETTINGS(struct pci_pm_cap *pmcap)
 {
 	pmcap->pid.cid = PCI_CAP_ID_PM;
-	pmcap->pid.next = OFFS_PCI_MSI_CAP;
+	pmcap->pid.next = OFFS_PCI_MSIX_CAP;
 
 	pmcap->pc.vs = 3;
 	pmcap->pmcs.nsfrst = 1;
@@ -742,6 +799,8 @@ bool NVMEV_PCI_INIT(struct nvmev_dev *nvmev_vdev)
 	nvmev_vdev->virt_bus = __create_pci_bus();
 	if (!nvmev_vdev->virt_bus)
 		return false;
+	
+	init_coalesce_timer();
 
 	return true;
 }

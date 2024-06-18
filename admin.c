@@ -486,6 +486,8 @@ static void __nvmev_admin_set_features(int eid)
 	}
 	case NVME_FEAT_IRQ_COALESCE:
 		// Set feature, DWORD11
+		nvmev_vdev->intr_thr = sq_entry(eid).features.dword11 & 0xff;
+		nvmev_vdev->intr_time = (sq_entry(eid).features.dword11 >> 8) & 0xff;
 		break;
 	case NVME_FEAT_IRQ_CONFIG:
 	case NVME_FEAT_WRITE_ATOMIC:
@@ -521,7 +523,8 @@ static void __nvmev_admin_get_features(int eid)
 		result0 = ((nvmev_vdev->nr_cq - 1) << 16 | (nvmev_vdev->nr_sq - 1));
 		break;
 	case NVME_FEAT_IRQ_COALESCE:
-		// Set feature, DWORD11
+		// Get feature, DWORD11
+		result0 = nvmev_vdev->intr_time << 8 | nvmev_vdev->intr_thr;
 		break;
 	case NVME_FEAT_IRQ_CONFIG:
 	case NVME_FEAT_WRITE_ATOMIC:
@@ -617,7 +620,7 @@ void nvmev_proc_admin_sq(int new_db, int old_db)
 		}
 	}
 
-	nvmev_signal_irq(0); /* ACQ is always associated with interrupt vector 0 */
+	nvmev_signal_irq(0, 1); /* ACQ is always associated with interrupt vector 0 */
 }
 
 void nvmev_proc_admin_cq(int new_db, int old_db)

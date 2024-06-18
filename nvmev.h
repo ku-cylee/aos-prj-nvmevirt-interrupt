@@ -261,6 +261,9 @@ struct nvmev_dev {
 	struct proc_dir_entry *proc_debug;
 
 	unsigned long long *io_unit_stat;
+
+	u8 intr_thr;
+	u8 intr_time;
 };
 
 struct nvmev_request {
@@ -303,7 +306,9 @@ void VDEV_FINALIZE(struct nvmev_dev *nvmev_vdev);
 // OPS_PCI
 bool nvmev_proc_bars(void);
 bool NVMEV_PCI_INIT(struct nvmev_dev *dev);
-void nvmev_signal_irq(int msi_index);
+void nvmev_signal_irq(int msi_index, bool is_admin);
+void init_coalesce_timer(void);
+void end_coalesce_timer(void);
 
 // OPS ADMIN QUEUE
 void nvmev_proc_admin_sq(int new_db, int old_db);
